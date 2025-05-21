@@ -17,10 +17,18 @@ const mongoClient = new MongoClient(process.env.MONGO_URI);
 let messagesCollection;
 
 async function connectToMongo() {
-    await mongoClient.connect();
-    const db = mongoClient.db("chatDB");
-    messagesCollection = db.collection("messages");
+    try {
+        await mongoClient.connect();
+        const db = mongoClient.db("chatDB");
+        messagesCollection = db.collection("messages");
+        console.log("✅ MongoDB connected");
+    } catch (err) {
+        console.error("❌ MongoDB connection failed:");
+        console.error(err.stack); // full error details
+        process.exit(1); // Optional: stop server if MongoDB fails
+    }
 }
+
 connectToMongo();
 
 

@@ -37,7 +37,7 @@ app.get('/messages', async (req, res) => {
 app.listen(PORT, () => {
     console.log(`🌐 REST API running on http://localhost:${PORT}`);
 });
-
+ const socket = new WebSocket("https://tcp-backend-5a85.onrender.com");
 // WebSocket server
 const wss = new WebSocket.Server({ port: WS_PORT });
 const clients = new Map();

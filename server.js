@@ -59,9 +59,6 @@ wss.on('connection', (ws, req) => {
         try {
             const data = JSON.parse(message.toString());
             const client = clients.get(ws);
-             catch (err) {
-            console.error("❌ Error handling WebSocket message:", err);
-                    }
             switch (data.type) {
                 case 'init':
                     clients.set(ws, { ...client, name: data.name });

@@ -11,26 +11,26 @@ app.use(cors());
 const PORT = process.env.PORT || 3000;
 
 // MongoDB
+
+const mongoClient = new MongoClient(process.env.MONGO_URI);
+
 let messagesCollection;
+
 async function connectToMongo() {
-    try {
-        const client = new MongoClient(process.env.MONGO_URI);
-        await client.connect();
-        const db = client.db("chatDB");
-        messagesCollection = db.collection("messages");
-        console.log("✅ MongoDB connected");
-    } catch (err) {
-        console.error("❌ MongoDB connection failed:", err);
-    }
+    await mongoClient.connect();
+    const db = mongoClient.db("chatDB");
+    messagesCollection = db.collection("messages");
 }
 connectToMongo();
 
+
 // REST endpoint (optional)
 app.get('/messages', async (req, res) => {
-    if (!messagesCollection) return res.status(500).send("Database not ready");
+    if (!messagesCollection) return res.status(500).send("MongoDB not ready");
     const messages = await messagesCollection.find().sort({ timestamp: 1 }).toArray();
     res.json(messages);
 });
+
 
 // Create HTTP server
 const server = http.createServer(app);
@@ -45,7 +45,9 @@ wss.on('connection', (ws, req) => {
     const clientId = clientIdCounter++;
     clients.set(ws, { id: clientId, name: `User ${clientId}` });
 
-    ws.on('message', async (message) => {
+        ws.on('message', async (message) => {
+            
+            const data = JSON.parse(message);
         try {
             const data = JSON.parse(message.toString());
             const client = clients.get(ws);
@@ -56,16 +58,27 @@ wss.on('connection', (ws, req) => {
                     console.log(`User ${data.name} joined`);
                     break;
 
-                case 'message':
-                    if (messagesCollection) {
-                        await messagesCollection.insertOne({
-                            sender: client.name,
-                            content: data.content,
-                            timestamp: new Date()
-                        });
-                    }
-                    broadcastMessage(ws, data);
-                    break;
+case 'message':
+    console.log(`Message from ${client.name}: ${data.content}`);
+
+    // ✅ Store in MongoDB
+    if (messagesCollection) {
+        try {
+            await messagesCollection.insertOne({
+                sender: client.name,
+                content: data.content,
+                timestamp: new Date()
+            });
+            console.log("✅ Message stored in MongoDB");
+        } catch (err) {
+            console.error("❌ Failed to store message:", err);
+        }
+    }
+
+    // ✅ Broadcast to others
+    broadcastMessage(ws, data);
+    break;
+
 
                 default:
                     console.log("Unknown message type", data);

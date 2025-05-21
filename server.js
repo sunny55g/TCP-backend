@@ -1,56 +1,49 @@
 require('dotenv').config();
-const WebSocket = require('ws');
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const { MongoClient } = require('mongodb');
+const WebSocket = require('ws');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const WS_PORT = process.env.WS_PORT || 8080;
-
-// HTTP server (for REST API)
 app.use(cors());
 
-let messagesCollection;
+const PORT = process.env.PORT || 3000;
 
+// MongoDB
+let messagesCollection;
 async function connectToMongo() {
     try {
         const client = new MongoClient(process.env.MONGO_URI);
         await client.connect();
         const db = client.db("chatDB");
         messagesCollection = db.collection("messages");
-        console.log("✅ Connected to MongoDB");
+        console.log("✅ MongoDB connected");
     } catch (err) {
-        console.error("❌ MongoDB Error:", err);
+        console.error("❌ MongoDB connection failed:", err);
     }
 }
 connectToMongo();
 
-// REST endpoint to fetch messages (optional)
+// REST endpoint (optional)
 app.get('/messages', async (req, res) => {
-    if (!messagesCollection) return res.status(500).send("DB not ready");
+    if (!messagesCollection) return res.status(500).send("Database not ready");
     const messages = await messagesCollection.find().sort({ timestamp: 1 }).toArray();
     res.json(messages);
 });
 
-// Start HTTP server
-app.listen(PORT, () => {
-    console.log(`🌐 REST API running on http://localhost:${PORT}`);
-});
- const socket = new WebSocket("https://tcp-backend-5a85.onrender.com");
-// WebSocket server
-const wss = new WebSocket.Server({ port: WS_PORT });
+// Create HTTP server
+const server = http.createServer(app);
+
+// ✅ Attach WebSocket to the same HTTP server
+const wss = new WebSocket.Server({ server });
+
 const clients = new Map();
 let clientIdCounter = 1;
 
-console.log(`📡 WebSocket Server running at ws://localhost:${WS_PORT}`);
-
 wss.on('connection', (ws, req) => {
     const clientId = clientIdCounter++;
-    const clientIp = req.socket.remoteAddress;
-    clients.set(ws, { id: clientId, name: `User ${clientId}`, ip: clientIp });
-
-    console.log(`Client #${clientId} connected from ${clientIp}`);
+    clients.set(ws, { id: clientId, name: `User ${clientId}` });
 
     ws.on('message', async (message) => {
         try {
@@ -60,13 +53,10 @@ wss.on('connection', (ws, req) => {
             switch (data.type) {
                 case 'init':
                     clients.set(ws, { ...client, name: data.name });
-                    console.log(`Client #${client.id} identified as "${data.name}"`);
+                    console.log(`User ${data.name} joined`);
                     break;
 
                 case 'message':
-                    console.log(`Message from ${client.name}: ${data.content}`);
-
-                    // Save to MongoDB
                     if (messagesCollection) {
                         await messagesCollection.insertOne({
                             sender: client.name,
@@ -74,22 +64,20 @@ wss.on('connection', (ws, req) => {
                             timestamp: new Date()
                         });
                     }
-
-                    // Broadcast
                     broadcastMessage(ws, data);
                     break;
 
                 default:
-                    console.log('Unknown message type:', data);
+                    console.log("Unknown message type", data);
             }
-        } catch (error) {
-            console.error('Error processing message:', error);
+        } catch (err) {
+            console.error("Error handling message:", err);
         }
     });
 
     ws.on('close', () => {
         const client = clients.get(ws);
-        console.log(`Client #${client.id} (${client.name}) disconnected`);
+        console.log(`${client.name} disconnected`);
         clients.delete(ws);
     });
 
@@ -101,9 +89,14 @@ wss.on('connection', (ws, req) => {
 });
 
 function broadcastMessage(sender, message) {
-    clients.forEach((client, ws) => {
+    clients.forEach((_, ws) => {
         if (ws !== sender && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify(message));
         }
     });
 }
+
+// ✅ Start server (both Express and WebSocket)
+server.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+});

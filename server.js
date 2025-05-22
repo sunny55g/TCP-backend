@@ -61,10 +61,23 @@ wss.on('connection', (ws) => {
 
             switch (data.type) {
                 case 'init':
-                    client.name = data.name;
-                    client.target = data.target; // ← store user’s target field
-                    console.log(`✅ ${data.name} connected with target ${data.target}`);
-                    break;
+                   // Check for name conflict
+                   for (let [clientSocket, clientData] of clients.entries()) {
+                       if (clientData.name === data.name) {
+                           ws.send(JSON.stringify({
+                               type: 'error',
+                               message: 'Name already in use. Please choose another.'
+                           }));
+                          ws.close(); // force disconnect
+                           return;
+                       }
+                   }
+
+                   client.name = data.name;
+                   client.target = data.target;
+                   console.log(`✅ ${data.name} connected with target ${data.target}`);
+                  break;
+               
 
                 case 'message':
                     console.log(`💬 ${client.name} → ${client.target}: ${data.content}`);

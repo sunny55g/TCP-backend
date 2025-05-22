@@ -49,55 +49,64 @@ const wss = new WebSocket.Server({ server });
 const clients = new Map();
 let clientIdCounter = 1;
 
-wss.on('connection', (ws, req) => {
+wss.on('connection', (ws) => {
     const clientId = clientIdCounter++;
-    clients.set(ws, { id: clientId, name: `User ${clientId}` });
+    let clientData = { id: clientId, name: `User${clientId}`, target: null };
+    clients.set(ws, clientData);
 
-        ws.on('message', async (message) => {
-            
-            const data = JSON.parse(message);
+    ws.on('message', async (message) => {
         try {
             const data = JSON.parse(message.toString());
             const client = clients.get(ws);
+
             switch (data.type) {
                 case 'init':
-                    clients.set(ws, { ...client, name: data.name });
-                    console.log(`User ${data.name} joined`);
+                    client.name = data.name;
+                    client.target = data.target; // ← store user’s target field
+                    console.log(`✅ ${data.name} connected with target ${data.target}`);
                     break;
 
-case 'message':
-    console.log(`Message from ${client.name}: ${data.content}`);
+                case 'message':
+                    console.log(`💬 ${client.name} → ${client.target}: ${data.content}`);
 
-    // ✅ Store in MongoDB
-    if (messagesCollection) {
-        try {
-            await messagesCollection.insertOne({
-                sender: client.name,
-                content: data.content,
-                timestamp: new Date()
-            });
-            console.log("✅ Message stored in MongoDB");
-        } catch (err) {
-            console.error("❌ Failed to store message:", err);
-        }
-    }
+                    if (messagesCollection) {
+                        await messagesCollection.insertOne({
+                            sender: client.name,
+                            content: data.content,
+                            target: client.target,
+                            timestamp: new Date()
+                        });
+                    }
 
-    // ✅ Broadcast to others
-    broadcastMessage(ws, data);
-    break;
+                    // Send to all other clients who share the same target
+                    for (let [otherWs, otherClient] of clients.entries()) {
+                        if (
+                            otherWs !== ws &&
+                            otherClient.target === client.target &&
+                            otherWs.readyState === WebSocket.OPEN
+                        ) {
+                            otherWs.send(JSON.stringify({
+                                type: 'message',
+                                sender: client.name,
+                                content: data.content,
+                                timestamp: new Date()
+                            }));
+                        }
+                    }
 
+                    break;
 
                 default:
-                    console.log("Unknown message type", data);
+                    console.warn('Unknown message type:', data.type);
             }
         } catch (err) {
-            console.error("Error handling message:", err);
+            console.error("❌ Error handling message:", err);
         }
     });
 
     ws.on('close', () => {
         const client = clients.get(ws);
-        console.log(`${client.name} disconnected`);
+        console.log(`❌ ${client.name} disconnected`);
         clients.delete(ws);
     });
 
@@ -107,6 +116,7 @@ case 'message':
         isServer: true
     }));
 });
+
 
 function broadcastMessage(sender, message) {
     clients.forEach((_, ws) => {
